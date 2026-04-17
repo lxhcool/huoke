@@ -1,0 +1,37 @@
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Dict, List, Literal
+
+from pydantic import BaseModel, Field
+
+
+class SourceCredentialField(BaseModel):
+    name: str
+    label: str
+    input_type: Literal["text", "password"] = "text"
+    required: bool = True
+
+
+class SourceAuthProviderItem(BaseModel):
+    source_name: str
+    display_name: str
+    task_sources: List[str]
+    credential_fields: List[SourceCredentialField]
+
+
+class SourceAuthProviderListResponse(BaseModel):
+    items: List[SourceAuthProviderItem]
+
+
+class SourceAuthVerifyRequest(BaseModel):
+    credentials: Dict[str, str] = Field(default_factory=dict)
+
+
+class SourceAuthVerifyResponse(BaseModel):
+    source_name: str
+    status: Literal["verified", "failed"]
+    message: str
+    verified_at: datetime
+    storage_state_path: str
+

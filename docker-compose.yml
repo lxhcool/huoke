@@ -1,0 +1,24 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: huoke-postgres
+    environment:
+      POSTGRES_DB: huoke
+      POSTGRES_USER: huoke
+      POSTGRES_PASSWORD: huoke
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    container_name: huoke-redis
+    ports:
+      - "6379:6379"
+
+volumes:
+  postgres_data:
+
