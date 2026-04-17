@@ -243,25 +243,37 @@ async def _run_joinf_scrape(source_type: str, keyword: str, country: str | None)
         await service.ensure_login_session(allow_manual=False)
 
     try:
+        output_path: Path
         if source_type == "business":
-            return await service.scrape_business_data(keyword, country)
-        return await service.scrape_customs_data(keyword, country)
+            output_path = await service.scrape_business_data(keyword, country)
+        else:
+            output_path = await service.scrape_customs_data(keyword, country)
+
+        if _batch_item_count(output_path) <= 0:
+            raise RuntimeError("自动抓取未识别到结果表格")
+
+        return output_path
     except Exception as error:
         fallback_error_markers = [
             "未找到可点击元素",
             "element is not editable",
             "人工抓取超时",
             "当前未登录",
+            "自动抓取未识别到结果表格",
         ]
         if not any(marker in str(error) for marker in fallback_error_markers):
             raise
 
-        return await service.scrape_from_manual_navigation(
+        output_path = await service.scrape_from_manual_navigation(
             source_type=source_type,
             keyword=keyword,
             country=country,
             wait_seconds=240,
         )
+        if _batch_item_count(output_path) <= 0:
+            raise RuntimeError("人工抓取未识别到结果表格，请在有结果的列表页停留后重试")
+
+        return output_path
 
 
 async def _run_linkedin_scrape(source_type: str, keyword: str, country: str | None) -> Path:
@@ -605,3 +617,15 @@ def _same_contact(left: dict, right: dict) -> bool:
         return False
 
     return True
+
+
+def _batch_item_count(output_path: Path) -> int:
+    try:
+        payload = json.loads(output_path.read_text(encoding="utf-8"))
+        items = payload.get("items", [])
+        if isinstance(items, list):
+            return len(items)
+    except Exception:
+        return 0
+
+    return 0

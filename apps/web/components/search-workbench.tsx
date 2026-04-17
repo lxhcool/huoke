@@ -17,10 +17,10 @@ const defaultSourceInput = "joinf, linkedin";
 const initialForm: SearchRequest = {
   query: "帮我找德国做激光切割设备、最近一年有进口记录的公司",
   sources: ["joinf_business", "joinf_customs", "linkedin_company", "linkedin_contact"],
-  country: "Germany",
-  hs_code: "845611",
-  customer_profile_mode: "small_wholesale",
-  customs_required: true,
+  country: undefined,
+  hs_code: undefined,
+  customer_profile_mode: "general",
+  customs_required: false,
   limit: 10,
 };
 
@@ -562,37 +562,6 @@ export function SearchWorkbench() {
               </div>
 
               <div className="field">
-                <label htmlFor="customerProfileMode">客户类型偏好</label>
-                <select
-                  id="customerProfileMode"
-                  value={form.customer_profile_mode}
-                  onChange={(event) => setForm({ ...form, customer_profile_mode: event.target.value })}
-                >
-                  <option value="small_wholesale">批发小单</option>
-                  <option value="general">通用</option>
-                  <option value="bulk_buying">大单采购</option>
-                </select>
-              </div>
-
-              <div className="field">
-                <label htmlFor="country">国家/地区</label>
-                <input
-                  id="country"
-                  value={form.country ?? ""}
-                  onChange={(event) => setForm({ ...form, country: event.target.value })}
-                />
-              </div>
-
-              <div className="field">
-                <label htmlFor="hsCode">HS Code</label>
-                <input
-                  id="hsCode"
-                  value={form.hs_code ?? ""}
-                  onChange={(event) => setForm({ ...form, hs_code: event.target.value })}
-                />
-              </div>
-
-              <div className="field">
                 <label htmlFor="limit">结果条数</label>
                 <input
                   id="limit"
@@ -602,18 +571,6 @@ export function SearchWorkbench() {
                   value={form.limit}
                   onChange={(event) => setForm({ ...form, limit: Number(event.target.value) || 10 })}
                 />
-              </div>
-
-              <div className="field">
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={form.customs_required}
-                    onChange={(event) => setForm({ ...form, customs_required: event.target.checked })}
-                    style={{ marginRight: 8 }}
-                  />
-                  必须有关联海关数据
-                </label>
               </div>
 
               <div className="actions">
@@ -650,10 +607,6 @@ export function SearchWorkbench() {
                 <div className="tags">
                   <span className="tag">任务 #{job.id}</span>
                   <span className="tag">状态：{job.status}</span>
-                  <span className="tag">客户偏好：{job.customer_profile_mode}</span>
-                  <span className="tag">国家：{job.country ?? "未指定"}</span>
-                  <span className="tag">海关筛选：{job.customs_required ? "是" : "否"}</span>
-                  {job.hs_code ? <span className="tag">HS Code：{job.hs_code}</span> : null}
                   {job.sources.map((source) => (
                     <span className="tag" key={source}>
                       {source}
