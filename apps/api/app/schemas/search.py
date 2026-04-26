@@ -25,18 +25,30 @@ class ParsedQuery(BaseModel):
 
 
 class ContactItem(BaseModel):
-    name: str
-    title: str
+    name: Optional[str] = None
+    title: Optional[str] = None
     email: Optional[str] = None
     email_type: Optional[str] = None
-    confidence: str
+    phone: Optional[str] = None
+    linkedin_url: Optional[str] = None
+    confidence: Optional[str] = None
 
 
 class CustomsSummary(BaseModel):
-    active_label: str
-    last_trade_at: str
+    active_label: str = ""
+    trade_date: str = ""
     hs_code: Optional[str] = None
-    frequency: int
+    frequency: int = 0
+    buyer: str = ""
+    supplier: Optional[str] = None
+    product_description: Optional[str] = None
+    weight: Optional[str] = None
+    quantity: Optional[str] = None
+    amount: Optional[str] = None
+    origin: Optional[str] = None
+    ai_summary: Optional[str] = None
+    # 兼容旧字段
+    last_trade_at: Optional[str] = None
 
 
 class LeadItem(BaseModel):
@@ -51,6 +63,7 @@ class LeadItem(BaseModel):
     match_reasons: List[str]
     contacts: List[ContactItem]
     customs_summary: Optional[CustomsSummary] = None
+    ai_summary: Optional[str] = None
 
 
 class SearchResponse(BaseModel):

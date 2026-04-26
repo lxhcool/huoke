@@ -7,19 +7,26 @@ from typing import List, Optional
 def extract_company_record(raw_item: dict, fallback_country: Optional[str] = None) -> dict:
     cells = [cell.strip() for cell in raw_item.get("cells", []) if cell and cell.strip()]
     links = (raw_item.get("metadata", {}) or {}).get("links", [])
+    detail = (raw_item.get("metadata", {}) or {}).get("detail", {}) or {}
 
-    company_name = _pick_company_name(cells)
-    industry = _pick_industry(cells)
-    employee_size = _pick_employee_size(cells)
-    linkedin_url = _pick_linkedin_company_url(links)
+    company_name = detail.get("company_name") or _pick_company_name(cells)
+    industry = detail.get("industry") or _pick_industry(cells)
+    employee_size = detail.get("employee_size") or _pick_employee_size(cells)
+    linkedin_url = detail.get("linkedin_url") or _pick_linkedin_company_url(links)
+    website = detail.get("website")
+    description = detail.get("description")
+    address = detail.get("address")
+    country = detail.get("country") or fallback_country or "Unknown"
 
     return {
         "company_name": company_name,
-        "country": fallback_country or "Unknown",
+        "country": country,
         "industry": industry,
-        "website": None,
+        "website": website,
         "employee_size": employee_size,
         "linkedin_url": linkedin_url,
+        "description": description,
+        "address": address,
     }
 
 
@@ -37,6 +44,7 @@ def extract_contact_record(raw_item: dict) -> dict:
         "title": title,
         "company_name": company_name,
         "linkedin_url": linkedin_url,
+        "phone": None,
     }
 
 

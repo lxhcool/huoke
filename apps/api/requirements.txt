@@ -5,3 +5,5 @@ pydantic-settings==2.5.2
 sqlalchemy==2.0.36
 psycopg[binary]==3.2.13
 playwright==1.53.0
+playwright-stealth==2.0.3
+httpx>=0.27.0

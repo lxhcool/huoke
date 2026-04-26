@@ -13,8 +13,9 @@ class Settings(BaseSettings):
     allowed_origins: list[str] = ["http://localhost:4000"]
     database_url: str = "sqlite:///./huoke.db"
     redis_url: str = "redis://localhost:6379/0"
-    joinf_username: Optional[str] = None
-    joinf_password: Optional[str] = None
+    joinf_username: Optional[str] = "hcct010"
+    joinf_password: Optional[str] = "hcct86069640"
+    joinf_login_user_id: Optional[int] = None
     linkedin_username: Optional[str] = None
     linkedin_password: Optional[str] = None
 

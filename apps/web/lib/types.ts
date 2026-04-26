@@ -1,3 +1,9 @@
+export type AIConfig = {
+  api_key: string;
+  base_url: string;
+  model: string;
+};
+
 export type SearchRequest = {
   query: string;
   sources: string[];
@@ -6,21 +12,34 @@ export type SearchRequest = {
   customer_profile_mode: string;
   customs_required: boolean;
   limit: number;
+  min_score: number;
+  ai_config?: AIConfig;
 };
 
 export type ContactItem = {
-  name: string;
-  title: string;
+  name?: string | null;
+  title?: string | null;
   email?: string | null;
   email_type?: string | null;
-  confidence: string;
+  confidence?: string | null;
+  phone?: string | null;
+  linkedin_url?: string | null;
 };
 
 export type CustomsSummary = {
-  active_label: string;
-  last_trade_at: string;
+  active_label?: string;
+  trade_date?: string;
+  last_trade_at?: string;
   hs_code?: string | null;
   frequency: number;
+  buyer?: string;
+  supplier?: string | null;
+  product_description?: string | null;
+  weight?: string | null;
+  quantity?: string | null;
+  amount?: string | null;
+  origin?: string | null;
+  ai_summary?: string | null;
 };
 
 export type LeadItem = {
@@ -69,12 +88,19 @@ export type SearchJob = {
   customer_profile_mode: string;
   customs_required: boolean;
   limit: number;
+  min_score: number;
   status: string;
   sources: string[];
   result_count: number;
   created_at: string;
   updated_at: string;
   source_tasks: SourceTask[];
+};
+
+export type SocialMediaItem = {
+  type: number;
+  url?: string | null;
+  snsUrl?: string | null;
 };
 
 export type SearchJobResult = {
@@ -85,6 +111,17 @@ export type SearchJobResult = {
   city?: string | null;
   website?: string | null;
   industry?: string | null;
+  main_business?: string | null;
+  phone?: string | null;
+  address?: string | null;
+  description?: string | null;
+  employee_size?: string | null;
+  email_count?: number | null;
+  linkedin_url?: string | null;
+  website_logo?: string | null;
+  grade?: string | null;
+  star?: number | null;
+  social_media?: SocialMediaItem[] | null;
   score: number;
   confidence: string;
   result_status: string;
@@ -93,6 +130,7 @@ export type SearchJobResult = {
   match_reasons: string[];
   contacts: ContactItem[];
   customs_summary?: CustomsSummary | null;
+  ai_summary?: string | null;
 };
 
 export type SearchJobResultsResponse = {

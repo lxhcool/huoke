@@ -28,6 +28,10 @@ class SourceAuthVerifyRequest(BaseModel):
     credentials: Dict[str, str] = Field(default_factory=dict)
 
 
+class SourceAuthCookieImportRequest(BaseModel):
+    cookie_string: str = Field(..., description="浏览器中复制的 Cookie 字符串")
+
+
 class SourceAuthVerifyResponse(BaseModel):
     source_name: str
     status: Literal["verified", "failed"]

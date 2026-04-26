@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-from typing import List, Optional
+import random
+from typing import Dict, List, Optional
 from urllib.parse import quote_plus
 
 from app.scrapers.linkedin.browser import LinkedinBrowserSession
@@ -9,6 +10,15 @@ from app.scrapers.linkedin.config import LinkedinScraperConfig
 from app.scrapers.linkedin.models import LinkedinRawRow, LinkedinScrapeBatch
 from app.scrapers.linkedin.selectors import LinkedinSelectors
 from app.scrapers.linkedin.storage import dump_batch
+
+MAX_PAGES = 2
+MAX_ITEMS_PER_PAGE = 10
+MIN_DELAY = 2
+MAX_DELAY = 8
+
+
+async def _random_delay() -> None:
+    await asyncio.sleep(random.uniform(MIN_DELAY, MAX_DELAY))
 
 
 class LinkedinScraperService:
@@ -77,11 +87,30 @@ class LinkedinScraperService:
                 await session.page.goto(search_url)
                 await self._guard_supported_domain(session.page)
 
-            await session.page.wait_for_timeout(2500)
+            await _random_delay()
             snapshot_path = self.config.screenshot_dir / f"{source_type}-results.png"
             await session.page.screenshot(path=str(snapshot_path), full_page=True)
             batch.page_snapshots.append(str(snapshot_path))
-            batch.items.extend(await self._extract_rows(session.page, source_type))
+
+            # 多页抓取 + 详情页深入
+            for page_num in range(MAX_PAGES):
+                page_rows = await self._extract_rows(session.page, source_type)
+                if not page_rows:
+                    break
+
+                # 限制每页最多抓取条数
+                page_rows = page_rows[:MAX_ITEMS_PER_PAGE]
+
+                if source_type == "company":
+                    page_rows = await self._enrich_company_rows_with_detail(session.page, page_rows)
+
+                batch.items.extend(page_rows)
+
+                if page_num < MAX_PAGES - 1:
+                    has_next = await self._try_click_pagination_next(session.page)
+                    if not has_next:
+                        break
+                    await _random_delay()
 
         return str(dump_batch(batch, self.config.raw_output_dir))
 
@@ -104,8 +133,7 @@ class LinkedinScraperService:
             return rows
 
         count = await row_locator.count()
-        max_count = min(count, 20)
-        for index in range(max_count):
+        for index in range(count):
             row = row_locator.nth(index)
             text = (await row.inner_text()).strip()
             cells = [cell.strip() for cell in text.split("\n") if cell.strip()]
@@ -130,6 +158,111 @@ class LinkedinScraperService:
             )
 
         return rows
+
+    async def _enrich_company_rows_with_detail(self, page, rows: List[LinkedinRawRow]) -> List[LinkedinRawRow]:
+        enriched_rows: List[LinkedinRawRow] = []
+
+        for row in rows:
+            links = (row.metadata or {}).get("links", []) or []
+            company_url = None
+            for link in links:
+                if "/company/" in link:
+                    company_url = link
+                    break
+
+            if not company_url:
+                enriched_rows.append(row)
+                continue
+
+            try:
+                await _random_delay()
+                await page.goto(company_url)
+                await self._guard_supported_domain(page)
+                await _random_delay()
+
+                detail = await self._extract_company_detail(page)
+                row.metadata["detail"] = detail
+                enriched_rows.append(row)
+
+                # 返回搜索结果页
+                await page.go_back()
+                await _random_delay()
+            except Exception:
+                enriched_rows.append(row)
+                try:
+                    await page.go_back()
+                    await _random_delay()
+                except Exception:
+                    pass
+
+        return enriched_rows
+
+    async def _extract_company_detail(self, page) -> Dict[str, object]:
+        detail: Dict[str, object] = {}
+
+        company_name = await self._try_get_text(page, LinkedinSelectors.company_name_candidates)
+        if company_name:
+            detail["company_name"] = company_name
+
+        industry = await self._try_get_text(page, LinkedinSelectors.company_industry_candidates)
+        if industry:
+            detail["industry"] = industry
+
+        employee_size = await self._try_get_text(page, LinkedinSelectors.company_size_candidates)
+        if employee_size:
+            detail["employee_size"] = employee_size
+
+        website = await self._try_get_href(page, LinkedinSelectors.company_website_candidates)
+        if website:
+            detail["website"] = website
+
+        description = await self._try_get_text(page, LinkedinSelectors.company_description_candidates)
+        if description:
+            detail["description"] = description
+
+        address = await self._try_get_text(page, LinkedinSelectors.company_headquarters_candidates)
+        if address:
+            detail["address"] = address
+
+        current_url = page.url
+        if "/company/" in current_url:
+            detail["linkedin_url"] = current_url
+
+        return detail
+
+    async def _try_click_pagination_next(self, page) -> bool:
+        for selector in LinkedinSelectors.pagination_next_candidates:
+            try:
+                locator = page.locator(selector)
+                if await locator.count() > 0:
+                    btn = locator.first
+                    if await btn.is_visible() and await btn.is_enabled():
+                        await btn.click()
+                        await _random_delay()
+                        return True
+            except Exception:
+                continue
+        return False
+
+    async def _try_get_text(self, page, selectors: List[str]) -> Optional[str]:
+        locator = await self._find_first(page, selectors)
+        if locator is None:
+            return None
+        try:
+            text = (await locator.inner_text()).strip()
+            return text if text else None
+        except Exception:
+            return None
+
+    async def _try_get_href(self, page, selectors: List[str]) -> Optional[str]:
+        locator = await self._find_first(page, selectors)
+        if locator is None:
+            return None
+        try:
+            href = await locator.get_attribute("href")
+            return href.strip() if href else None
+        except Exception:
+            return None
 
     def _normalize_link(self, href: Optional[str]) -> Optional[str]:
         if not href:

@@ -8,16 +8,35 @@ def extract_business_record(raw_item: dict, fallback_country: Optional[str] = No
     cells = raw_item.get("cells", [])
     metadata = raw_item.get("metadata", {}) or {}
     links = metadata.get("links", []) or []
+    detail = metadata.get("detail", {}) or {}
 
-    company_name = _pick_company_name(cells)
-    website = _pick_website(cells, links)
-    country = _pick_country(cells, fallback_country)
-    city = _pick_city(cells, country)
-    industry = _pick_industry(cells)
+    company_name = detail.get("company_name") or _pick_company_name(cells)
+    website = detail.get("website") or _pick_website(cells, links)
+    country = detail.get("country") or _pick_country(cells, fallback_country)
+    city = detail.get("city") or _pick_city(cells, country)
+    industry = detail.get("industry") or _pick_industry(cells)
+    description = detail.get("description")
+    phone = detail.get("phone") or _pick_phone(cells)
+    address = detail.get("address")
+
+    # 合并列表页联系人 + 详情页联系人
+    list_contacts = []
     contact_name = _pick_contact_name(cells)
     contact_title = _pick_contact_title(cells)
     contact_email = _pick_email(cells)
-    phone = _pick_phone(cells)
+    contact_phone = _pick_phone(cells)
+    if any([contact_name, contact_title, contact_email, contact_phone]):
+        list_contacts.append({
+            "name": contact_name,
+            "title": contact_title,
+            "email": contact_email,
+            "email_type": "business" if contact_email else None,
+            "confidence": "B",
+            "phone": contact_phone,
+        })
+
+    detail_contacts = detail.get("contacts", []) or []
+    merged_contacts = _merge_contacts(list_contacts, detail_contacts)
 
     return {
         "company_name": company_name,
@@ -25,16 +44,10 @@ def extract_business_record(raw_item: dict, fallback_country: Optional[str] = No
         "city": city,
         "website": website,
         "industry": industry,
-        "contacts": [
-            {
-                "name": contact_name,
-                "title": contact_title,
-                "email": contact_email,
-                "email_type": "business" if contact_email else None,
-                "confidence": "B",
-                "phone": phone,
-            }
-        ] if any([contact_name, contact_title, contact_email, phone]) else [],
+        "description": description,
+        "phone": phone,
+        "address": address,
+        "contacts": merged_contacts,
         "detail_url": links[0] if links else raw_item.get("page_url"),
     }
 
@@ -43,21 +56,33 @@ def extract_customs_record(raw_item: dict, fallback_hs_code: Optional[str] = Non
     cells = raw_item.get("cells", [])
     metadata = raw_item.get("metadata", {}) or {}
     links = metadata.get("links", []) or []
+    detail = metadata.get("detail", {}) or {}
 
-    company_name = _pick_company_name(cells)
-    country = _pick_country(cells, fallback_country)
-    hs_code = _pick_hs_code(cells, fallback_hs_code)
-    trade_date = _pick_trade_date(cells)
-    frequency = _pick_frequency(cells)
-    product_description = _pick_product_description(cells)
+    # 优先从 detail（结构化数据）获取，fallback 到 cells 解析
+    buyer = detail.get("buyer") or _pick_buyer(cells)
+    supplier = detail.get("supplier") or _pick_supplier(cells)
+    trade_date = detail.get("trade_date") or _pick_trade_date(cells)
+    hs_code = detail.get("hs_code") or _pick_hs_code(cells, fallback_hs_code)
+    product_description = detail.get("product_description") or _pick_product_description(cells)
+    weight = detail.get("weight") or _pick_weight(cells)
+    quantity = detail.get("quantity") or _pick_quantity(cells)
+    amount = detail.get("amount") or _pick_amount(cells)
+    frequency = detail.get("frequency") or _pick_frequency(cells)
+    country = detail.get("country") or detail.get("country_cn") or _pick_country(cells, fallback_country)
+    origin = detail.get("origin") or detail.get("origin_cn") or ""
 
     return {
-        "company_name": company_name,
-        "country": country,
-        "hs_code": hs_code,
+        "buyer": buyer,
+        "supplier": supplier,
         "trade_date": trade_date,
-        "frequency": frequency,
+        "hs_code": hs_code,
         "product_description": product_description,
+        "weight": weight,
+        "quantity": quantity,
+        "amount": amount,
+        "frequency": frequency,
+        "country": country,
+        "origin": origin,
         "detail_url": links[0] if links else raw_item.get("page_url"),
     }
 
@@ -73,17 +98,30 @@ def _pick_company_name(cells: List[str]) -> str:
             continue
         if re.fullmatch(r"[0-9\-_/]+", candidate):
             continue
+        # ★ 排除纯域名（如 "zjbsled.com"）
+        if re.fullmatch(r"[a-zA-Z0-9-]+\.[a-zA-Z]{2,}", candidate):
+            continue
+        # ★ 排除纯数字或 "+数字" 模式
+        if re.fullmatch(r"\+?\d+", candidate):
+            continue
         return candidate
     return cells[0] if cells else "Unknown Company"
 
 
-def _pick_website(cells: List[str], links: List[str]) -> Optional[str]:
+def _pick_website(cells: List[str], links: List) -> Optional[str]:
     for link in links:
-        if link.startswith("http") and "linkedin.com" not in link:
-            return link
+        # 支持 dict 格式 {"href": "...", "text": "..."}
+        if isinstance(link, dict):
+            href = link.get("href", "")
+        else:
+            href = link
+        if href.startswith("http") and "linkedin.com" not in href and "joinf.com" not in href:
+            return href
     for cell in cells:
         if cell.startswith("http://") or cell.startswith("https://") or cell.startswith("www."):
-            return cell if cell.startswith("http") else f"https://{cell}"
+            url = cell if cell.startswith("http") else f"https://{cell}"
+            if "joinf.com" not in url and "linkedin.com" not in url:
+                return url
     return None
 
 
@@ -194,6 +232,41 @@ def _pick_product_description(cells: List[str]) -> Optional[str]:
     return None
 
 
+def _pick_buyer(cells: List[str]) -> str:
+    for cell in cells:
+        if cell.startswith("采购商:"):
+            return cell[len("采购商:"):].strip()
+    return ""
+
+
+def _pick_supplier(cells: List[str]) -> str:
+    for cell in cells:
+        if cell.startswith("供应商:"):
+            return cell[len("供应商:"):].strip()
+    return ""
+
+
+def _pick_weight(cells: List[str]) -> Optional[str]:
+    for cell in cells:
+        if cell.startswith("重量:"):
+            return cell[len("重量:"):].strip()
+    return None
+
+
+def _pick_quantity(cells: List[str]) -> Optional[str]:
+    for cell in cells:
+        if cell.startswith("数量:"):
+            return cell[len("数量:"):].strip()
+    return None
+
+
+def _pick_amount(cells: List[str]) -> Optional[str]:
+    for cell in cells:
+        if cell.startswith("金额:"):
+            return cell[len("金额:"):].strip()
+    return None
+
+
 def _looks_like_date(value: str) -> bool:
     return bool(re.search(r"\d{4}[-/]\d{1,2}[-/]\d{1,2}", value))
 
@@ -206,3 +279,24 @@ def _looks_like_name(value: str) -> bool:
 def _looks_like_company(value: str) -> bool:
     lowered = value.lower()
     return any(keyword in lowered for keyword in ["ltd", "gmbh", "inc", "co.", "llc", "company", "corporation", "corp"])
+
+
+def _merge_contacts(list_contacts: List[dict], detail_contacts: List[dict]) -> List[dict]:
+    if not detail_contacts:
+        return list_contacts
+    if not list_contacts:
+        return detail_contacts
+
+    merged = list(list_contacts)
+    for dc in detail_contacts:
+        dc_name = (dc.get("name") or "").strip().lower()
+        if not dc_name:
+            continue
+        is_dup = any(
+            (lc.get("name") or "").strip().lower() == dc_name
+            for lc in merged
+        )
+        if not is_dup:
+            merged.append(dc)
+
+    return merged

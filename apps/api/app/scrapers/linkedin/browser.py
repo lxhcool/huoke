@@ -6,6 +6,12 @@ from playwright.async_api import BrowserContext, Page, async_playwright
 
 from app.scrapers.linkedin.config import LinkedinScraperConfig
 
+try:
+    from playwright_stealth import stealth_async
+    _STEALTH_AVAILABLE = True
+except ImportError:
+    _STEALTH_AVAILABLE = False
+
 
 class LinkedinBrowserSession:
     def __init__(self, config: LinkedinScraperConfig):
@@ -24,6 +30,10 @@ class LinkedinBrowserSession:
         self.context = await self.browser.new_context(storage_state=storage_state)
         self.page = await self.context.new_page()
         self.page.set_default_timeout(self.config.timeout_ms)
+
+        if _STEALTH_AVAILABLE:
+            await stealth_async(self.page)
+
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:

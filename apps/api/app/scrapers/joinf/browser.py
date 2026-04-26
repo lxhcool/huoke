@@ -34,4 +34,3 @@ class JoinfBrowserSession:
             await self.browser.close()
         if self.playwright is not None:
             await self.playwright.stop()
-

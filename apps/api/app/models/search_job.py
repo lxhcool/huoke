@@ -19,8 +19,10 @@ class SearchJob(Base):
     customer_profile_mode: Mapped[str] = mapped_column(String(50), default="small_wholesale")
     customs_required: Mapped[bool] = mapped_column(Boolean, default=False)
     limit: Mapped[int] = mapped_column(Integer, default=10)
+    min_score: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String(50), default="queued")
     sources_json: Mapped[str] = mapped_column(Text, default="[]")
+    ai_config_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
