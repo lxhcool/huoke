@@ -16,3 +16,16 @@ __pycache__
 runtime/
 *.db
 *.tsbuildinfo
+.codebuddy
+*.db-shm
+*.db-wal
+*.png
+check_db*.py
+analyze_html*.py
+test_*.py
+apps/api/check_db.py
+apps/api/fix_cookies.py
+apps/api/manual_login.py
+apps/api/test_*.py
+dev.cmd
+scripts/
