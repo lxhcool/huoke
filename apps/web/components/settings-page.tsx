@@ -72,13 +72,13 @@ export function SettingsPage() {
   useEffect(() => {
     const stored = parseStorage(localStorage.getItem(sourceCredentialStorageKey), {});
     const defaultCreds = { joinf: { username: "hcct010", password: "hcct86069640" } };
-    const merged = { ...defaultCreds };
+    const merged: Record<string, Record<string, string>> = { ...defaultCreds };
     for (const [key, val] of Object.entries(stored)) {
-      if (val && Object.keys(val).length > 0) merged[key] = val;
+      if (val && typeof val === "object" && Object.keys(val as Record<string, unknown>).length > 0) merged[key] = val as Record<string, string>;
     }
     setSourceCredentials(merged);
     setSourceAuthStatus(parseStorage(localStorage.getItem(sourceAuthStatusStorageKey), {}));
-    const storedAiConfig = parseStorage<AIConfig>(localStorage.getItem(aiConfigStorageKey), null);
+    const storedAiConfig = parseStorage<AIConfig | null>(localStorage.getItem(aiConfigStorageKey), null);
     if (storedAiConfig && storedAiConfig.api_key) setAiConfig(storedAiConfig);
   }, []);
 
