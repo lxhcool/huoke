@@ -804,7 +804,7 @@ async def _run_joinf_scrape(source_type: str, keyword: str, country: str | None,
     from app.scrapers.joinf.service import is_cancelled, clear_cancel
     logger = logging.getLogger("joinf_scrape")
     print(f"=== [DEBUG] _run_joinf_scrape called: source={source_type}, ai_config={'PRESENT' if ai_config else 'NONE'}, job_id={job_id}")
-    config = JoinfScraperConfig(headless=False)
+    config = JoinfScraperConfig()
     service = JoinfScraperService(config, ai_config=ai_config)
 
     logger.info(f"Starting Joinf {source_type} scrape: keyword={keyword}, country={country}")

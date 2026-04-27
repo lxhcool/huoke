@@ -29,3 +29,11 @@ apps/api/manual_login.py
 apps/api/test_*.py
 dev.cmd
 scripts/
+*.tar.gz
+chromium-linux.zip
+headless-shell-linux.zip
+download_chromium.py
+download_headless.py
+setup_chromium.py
+setup_headless.py
+install_pw.py
