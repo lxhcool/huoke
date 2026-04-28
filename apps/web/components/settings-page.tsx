@@ -47,7 +47,6 @@ export function SettingsPage() {
   const [cookieInput, setCookieInput] = useState<Record<string, string>>({});
   const [cookieImporting, setCookieImporting] = useState<Record<string, boolean>>({});
   const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
-  const [showNovnc, setShowNovnc] = useState<Record<string, boolean>>({});
   const [aiConfig, setAiConfig] = useState<AIConfig>({
     api_key: "", base_url: "https://api.siliconflow.cn/v1", model: "Qwen/Qwen3-8B",
   });
@@ -133,21 +132,13 @@ export function SettingsPage() {
     if (!provider) return;
     const credentials = sourceCredentials[sourceName] ?? {};
     setSourceVerifying((prev) => ({ ...prev, [sourceName]: true }));
-    // 清除旧状态，提示 noVNC 地址
-    const novncUrl = typeof window !== "undefined" && window.location.hostname !== "localhost"
-      ? `${window.location.origin}/novnc/vnc.html?autoconnect=true`
-      : "";
-    const novncHint = novncUrl
-      ? `正在启动浏览器登录... 请在下方远程浏览器中完成手动操作（如验证码）`
-      : "正在启动浏览器登录...";
+    // 清除旧状态，提示信息
+    const hint = "正在通过接口登录验证...";
     setSourceAuthStatus((prev) => {
-      const next = { ...prev, [sourceName]: { verified: false, message: novncHint } };
+      const next = { ...prev, [sourceName]: { verified: false, message: hint } };
       localStorage.setItem(sourceAuthStatusStorageKey, JSON.stringify(next));
       return next;
     });
-    if (novncUrl) {
-      setShowNovnc((prev) => ({ ...prev, [sourceName]: true }));
-    }
     try {
       // Step 1: 发起验证请求，获取 task_id
       const res = await fetch(`${apiBaseUrl}/source-auth/${sourceName}/verify`, {
@@ -178,12 +169,10 @@ export function SettingsPage() {
 
         if (status.status === "verified") {
           showToast("success", `${provider.display_name} 验证成功`);
-          setShowNovnc((prev) => ({ ...prev, [sourceName]: false }));
           return;
         }
         if (status.status === "failed") {
           showToast("error", status.message || "验证失败");
-          setShowNovnc((prev) => ({ ...prev, [sourceName]: false }));
           return;
         }
         // pending / running: 继续轮询
@@ -202,7 +191,6 @@ export function SettingsPage() {
         return next;
       });
       showToast("error", msg);
-      setShowNovnc((prev) => ({ ...prev, [sourceName]: false }));
     } finally {
       setSourceVerifying((prev) => ({ ...prev, [sourceName]: false }));
     }
@@ -426,26 +414,6 @@ export function SettingsPage() {
                         </div>
                       )}
 
-                      {/* noVNC Remote Browser iframe */}
-                      {showNovnc[provider.source_name] && (
-                        <div className="mt-4 border border-slate-200 rounded-lg overflow-hidden">
-                          <div className="flex items-center justify-between bg-slate-800 px-3 py-2">
-                            <span className="text-xs text-white font-medium">远程浏览器 - 在此处完成登录操作</span>
-                            <button
-                              onClick={() => setShowNovnc((prev) => ({ ...prev, [provider.source_name]: false }))}
-                              className="text-xs text-slate-300 hover:text-white cursor-pointer"
-                            >
-                              关闭
-                            </button>
-                          </div>
-                          <iframe
-                            src={`${window.location.origin}/novnc/vnc.html?autoconnect=true`}
-                            className="w-full border-0"
-                            style={{ height: "500px" }}
-                            allow="clipboard-read; clipboard-write"
-                          />
-                        </div>
-                      )}
                     </div>
                   )}
                 </div>
