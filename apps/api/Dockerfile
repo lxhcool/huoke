@@ -20,16 +20,11 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com -r requirements.txt
 
 # 安装 Playwright Chromium 系统依赖 + 浏览器
-# 分两步：先用国内镜像装系统依赖，再下载浏览器
 RUN playwright install-deps chromium \
     && playwright install chromium
 
 # 应用代码
 COPY . .
-
-# noVNC 启动脚本
-COPY scripts/start-novnc.sh /app/start-novnc.sh
-RUN chmod +x /app/start-novnc.sh
 
 # 数据目录
 RUN mkdir -p /app/data
@@ -39,4 +34,4 @@ ENV DISPLAY=:99
 
 EXPOSE 8000 6080
 
-CMD ["/app/start-novnc.sh"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
