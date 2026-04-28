@@ -132,7 +132,14 @@ export function SettingsPage() {
     if (!provider) return;
     const credentials = sourceCredentials[sourceName] ?? {};
     setSourceVerifying((prev) => ({ ...prev, [sourceName]: true }));
+    // 清除旧状态
+    setSourceAuthStatus((prev) => {
+      const next = { ...prev, [sourceName]: { verified: false, message: "正在启动浏览器登录..." } };
+      localStorage.setItem(sourceAuthStatusStorageKey, JSON.stringify(next));
+      return next;
+    });
     try {
+      // Step 1: 发起验证请求，获取 task_id
       const res = await fetch(`${apiBaseUrl}/source-auth/${sourceName}/verify`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ credentials }),
       });
@@ -141,15 +148,42 @@ export function SettingsPage() {
         try { const p = await res.json(); if (p.detail) detail = p.detail; } catch { /* */ }
         throw new Error(detail);
       }
-      const payload: SourceAuthVerifyResponse = await res.json();
-      setSourceAuthStatus((prev) => {
-        const next = { ...prev, [sourceName]: { verified: payload.status === "verified", verified_at: payload.verified_at, message: payload.message } };
-        localStorage.setItem(sourceAuthStatusStorageKey, JSON.stringify(next));
-        return next;
-      });
-      showToast("success", `${provider.display_name} 验证成功`);
+      const taskData = await res.json();
+      const taskId = taskData.task_id;
+
+      // Step 2: 轮询任务状态
+      const maxPolls = 120; // 最多轮询 120 次 × 3 秒 = 6 分钟
+      for (let i = 0; i < maxPolls; i++) {
+        await new Promise((r) => setTimeout(r, 3000));
+        const statusRes = await fetch(`${apiBaseUrl}/source-auth/verify-status/${taskId}`);
+        if (!statusRes.ok) continue;
+        const status = await statusRes.json();
+
+        // 更新显示状态
+        setSourceAuthStatus((prev) => {
+          const next = { ...prev, [sourceName]: { verified: status.status === "verified", message: status.message } };
+          localStorage.setItem(sourceAuthStatusStorageKey, JSON.stringify(next));
+          return next;
+        });
+
+        if (status.status === "verified") {
+          showToast("success", `${provider.display_name} 验证成功`);
+          return;
+        }
+        if (status.status === "failed") {
+          showToast("error", status.message || "验证失败");
+          return;
+        }
+        // pending / running: 继续轮询
+      }
+      throw new Error("验证超时，请重试");
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "验证失败";
+      let msg = "验证失败";
+      if (err instanceof TypeError && err.message === "Failed to fetch") {
+        msg = `网络连接失败，请检查网络后重试`;
+      } else if (err instanceof Error) {
+        msg = err.message;
+      }
       setSourceAuthStatus((prev) => {
         const next = { ...prev, [sourceName]: { verified: false, message: msg } };
         localStorage.setItem(sourceAuthStatusStorageKey, JSON.stringify(next));
@@ -184,7 +218,13 @@ export function SettingsPage() {
       setCookieInput((prev) => ({ ...prev, [sourceName]: "" }));
       showToast("success", `${displayName} Cookie 导入成功`);
     } catch (err) {
-      showToast("error", err instanceof Error ? err.message : "Cookie 导入失败");
+      let msg = "Cookie 导入失败";
+      if (err instanceof TypeError && err.message === "Failed to fetch") {
+        msg = `网络连接失败，请检查网络后重试`;
+      } else if (err instanceof Error) {
+        msg = err.message;
+      }
+      showToast("error", msg);
     } finally {
       setCookieImporting((prev) => ({ ...prev, [sourceName]: false }));
     }
@@ -325,9 +365,9 @@ export function SettingsPage() {
                           className="btn-primary text-xs !py-2 cursor-pointer"
                         >
                           {isVerifying ? (
-                            <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> 等待浏览器登录中...</>
+                            <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> 浏览器登录中，请稍候...</>
                           ) : (
-                            <><ExternalLink className="h-3.5 w-3.5 mr-1" /> 打开浏览器登录</>
+                            <><ExternalLink className="h-3.5 w-3.5 mr-1" /> 验证登录</>
                           )}
                         </button>
                         <button

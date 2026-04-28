@@ -2,17 +2,22 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# 系统依赖（含 Playwright Chromium 所需的系统库）
+# 使用国内 Debian 镜像源加速
+RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources
+
+# 系统依赖
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Python 依赖
+# Python 依赖（使用国内镜像加速）
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com -r requirements.txt
 
-# 安装 Playwright Chromium 浏览器及系统依赖
-RUN playwright install --with-deps chromium
+# 安装 Playwright Chromium 系统依赖 + 浏览器
+# 分两步：先用国内镜像装系统依赖，再下载浏览器
+RUN playwright install-deps chromium \
+    && playwright install chromium
 
 # 应用代码
 COPY . .

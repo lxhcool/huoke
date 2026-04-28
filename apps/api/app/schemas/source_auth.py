@@ -39,3 +39,18 @@ class SourceAuthVerifyResponse(BaseModel):
     verified_at: datetime
     storage_state_path: str
 
+
+class SourceAuthVerifyTaskResponse(BaseModel):
+    task_id: str
+    source_name: str
+    status: Literal["pending", "running", "verified", "failed"]
+    message: str = ""
+
+
+class SourceAuthVerifyTaskStatus(BaseModel):
+    task_id: str
+    source_name: str
+    status: Literal["pending", "running", "verified", "failed"]
+    message: str = ""
+    verified_at: datetime | None = None
+

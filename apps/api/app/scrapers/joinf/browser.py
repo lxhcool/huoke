@@ -16,9 +16,28 @@ class JoinfBrowserSession:
         self.page: Optional[Page] = None
 
     async def __aenter__(self) -> "JoinfBrowserSession":
+        import os
         self.config.ensure_dirs()
         self.playwright = await async_playwright().start()
-        self.browser = await self.playwright.chromium.launch(headless=self.config.headless)
+
+        # Docker/CI 环境需要额外启动参数
+        launch_args = []
+        if os.getenv("APP_ENV") == "production" or os.getenv("CHROMIUM_FLAGS"):
+            launch_args = [
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+                "--no-first-run",
+                "--no-zygote",
+                "--single-process",
+                "--disable-extensions",
+            ]
+
+        self.browser = await self.playwright.chromium.launch(
+            headless=self.config.headless,
+            args=launch_args if launch_args else None,
+        )
 
         storage_state = str(self.config.storage_state_path) if self.config.storage_state_path.exists() else None
         self.context = await self.browser.new_context(storage_state=storage_state)

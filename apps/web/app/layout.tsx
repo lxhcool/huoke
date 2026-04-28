@@ -2,6 +2,8 @@ import "./globals.css";
 import type { Metadata } from "next";
 import { AppShell } from "../components/app-shell";
 
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "Huoke - 获客线索发现",
   description: "外贸获客线索发现平台",

@@ -21,7 +21,9 @@ ENV NODE_ENV=production
 
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
-COPY --from=builder /app/public ./public
+# public 目录可能不存在，先在 builder 中确保存在
+RUN mkdir -p ./public
+COPY --from=builder /app/public/ ./public/
 
 EXPOSE 3000
 
