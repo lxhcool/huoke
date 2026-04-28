@@ -37,6 +37,7 @@ services:
       ALLOWED_ORIGINS: '["https://huoke.lxhcoool.cn","http://huoke.lxhcoool.cn"]'
     ports:
       - "8000:8000"
+      - "6080:6080"
     volumes:
       - api_data:/app/data
       - api_auth_cache:/app/.auth-cache

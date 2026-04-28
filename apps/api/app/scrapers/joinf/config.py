@@ -18,7 +18,7 @@ class JoinfScraperConfig:
     raw_output_dir: Path = Path("runtime/joinf/raw")
     screenshot_dir: Path = Path("runtime/joinf/screenshots")
     timeout_ms: int = 60000
-    headless: bool = os.getenv("APP_ENV", "development") == "production"
+    headless: bool = os.getenv("APP_ENV", "development") == "production" and os.getenv("ENABLE_HEADED_VERIFY", "") != "1"
     username: Optional[str] = os.getenv("JOINF_USERNAME") or settings.joinf_username
     password: Optional[str] = os.getenv("JOINF_PASSWORD") or settings.joinf_password
     login_user_id: Optional[int] = None

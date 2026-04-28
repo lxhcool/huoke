@@ -132,9 +132,15 @@ export function SettingsPage() {
     if (!provider) return;
     const credentials = sourceCredentials[sourceName] ?? {};
     setSourceVerifying((prev) => ({ ...prev, [sourceName]: true }));
-    // 清除旧状态
+    // 清除旧状态，提示 noVNC 地址
+    const novncUrl = typeof window !== "undefined" && window.location.hostname !== "localhost"
+      ? `http://${window.location.hostname}:6080/vnc.html`
+      : "";
+    const novncHint = novncUrl
+      ? `正在启动浏览器登录... 若需手动操作（如验证码），请打开远程浏览器：${novncUrl}`
+      : "正在启动浏览器登录...";
     setSourceAuthStatus((prev) => {
-      const next = { ...prev, [sourceName]: { verified: false, message: "正在启动浏览器登录..." } };
+      const next = { ...prev, [sourceName]: { verified: false, message: novncHint } };
       localStorage.setItem(sourceAuthStatusStorageKey, JSON.stringify(next));
       return next;
     });

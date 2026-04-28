@@ -16,7 +16,7 @@ class LinkedinScraperConfig:
     raw_output_dir: Path = Path("runtime/linkedin/raw")
     screenshot_dir: Path = Path("runtime/linkedin/screenshots")
     timeout_ms: int = 30000
-    headless: bool = os.getenv("APP_ENV", "development") == "production"
+    headless: bool = os.getenv("APP_ENV", "development") == "production" and os.getenv("ENABLE_HEADED_VERIFY", "") != "1"
     username: Optional[str] = os.getenv("LINKEDIN_USERNAME") or settings.linkedin_username
     password: Optional[str] = os.getenv("LINKEDIN_PASSWORD") or settings.linkedin_password
 

@@ -34,6 +34,7 @@ def _run_joinf_verify_in_thread(username: str, password: str, login_user_id: str
     We restore ProactorEventLoopPolicy in this thread so asyncio.run() works.
     """
     import asyncio
+    import os
     import sys
 
     if sys.platform == "win32":
@@ -46,11 +47,18 @@ def _run_joinf_verify_in_thread(username: str, password: str, login_user_id: str
         except (ValueError, TypeError):
             pass
 
+    # ★ 验证登录时强制使用非 headless 模式，让用户可以通过 noVNC 远程操作浏览器
+    # 临时设置环境变量，使 JoinfScraperConfig.headless=False
+    os.environ["ENABLE_HEADED_VERIFY"] = "1"
+
     config = JoinfScraperConfig(username=username or None, password=password or None, login_user_id=user_id_int)
     service = JoinfScraperService(config)
     result = asyncio.run(
-        service.ensure_login_session(allow_manual=True, interactive_manual=False, manual_timeout_seconds=300)
+        service.ensure_login_session(allow_manual=True, interactive_manual=True, manual_timeout_seconds=300)
     )
+
+    # 清理环境变量
+    os.environ.pop("ENABLE_HEADED_VERIFY", None)
 
     # ★ ensure_login_session 内部已自动提取 loginUserId 并保存到 auth-cache
     # 但如果自动提取失败（跨域 localStorage 不可访问），这里用 config 中的 loginUserId 兜底

@@ -5,9 +5,14 @@ WORKDIR /app
 # 使用国内 Debian 镜像源加速
 RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources
 
-# 系统依赖
+# 系统依赖 + Xvfb + noVNC（远程浏览器查看）
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    xvfb \
+    x11vnc \
+    fluxbox \
+    novnc \
+    websockify \
     && rm -rf /var/lib/apt/lists/*
 
 # Python 依赖（使用国内镜像加速）
@@ -22,11 +27,16 @@ RUN playwright install-deps chromium \
 # 应用代码
 COPY . .
 
+# noVNC 启动脚本
+COPY scripts/start-novnc.sh /app/start-novnc.sh
+RUN chmod +x /app/start-novnc.sh
+
 # 数据目录
 RUN mkdir -p /app/data
 
 ENV PYTHONUNBUFFERED=1
+ENV DISPLAY=:99
 
-EXPOSE 8000
+EXPOSE 8000 6080
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["/app/start-novnc.sh"]
