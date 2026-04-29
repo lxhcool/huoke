@@ -163,6 +163,36 @@ export function SearchWorkbench() {
     if (storedAiConfig && storedAiConfig.api_key) setAiConfig(storedAiConfig);
   }, []);
 
+  // Auto-verify joinf if not yet verified
+  useEffect(() => {
+    const status = parseStorage<SourceAuthStatusStore>(localStorage.getItem(sourceAuthStatusStorageKey), {});
+    if (status.joinf?.verified) return;
+    const creds = sourceCredentials.joinf;
+    if (!creds?.username || !creds?.password) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${apiBaseUrl}/source-auth/joinf/verify`, {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ credentials: creds }),
+        });
+        if (!res.ok || cancelled) return;
+        const { task_id } = await res.json();
+        for (let i = 0; i < 60; i++) {
+          await new Promise((r) => setTimeout(r, 3000));
+          if (cancelled) return;
+          const sr = await fetch(`${apiBaseUrl}/source-auth/verify-status/${task_id}`);
+          if (!sr.ok) continue;
+          const s = await sr.json();
+          const next: SourceAuthStatusStore = { ...parseStorage<SourceAuthStatusStore>(localStorage.getItem(sourceAuthStatusStorageKey), {}), joinf: { verified: s.status === "verified", message: s.message } };
+          localStorage.setItem(sourceAuthStatusStorageKey, JSON.stringify(next));
+          setSourceAuthStatus(next);
+          if (s.status === "verified" || s.status === "failed") return;
+        }
+      } catch { /* silent */ }
+    })();
+    return () => { cancelled = true; };
+  }, [sourceCredentials]);
+
   // Poll for settings changes
   useEffect(() => {
     const timer = setInterval(() => {
