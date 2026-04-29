@@ -8,7 +8,6 @@ import {
   FileText, Anchor, ExternalLink, Copy, Bookmark, Ban, Loader2,
   CircleCheck, CircleX, Circle, Clock, AlertTriangle, Sparkles,
   Hash, Weight, Package, DollarSign, Repeat, Info,
-  ArrowRight, Key,
 } from "lucide-react";
 
 import type {
@@ -25,8 +24,8 @@ import type {
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api";
 
 const sourceOptions = [
-  { key: "joinf_business", label: "Joinf 商业数据" },
-  { key: "joinf_customs", label: "Joinf 海关数据" },
+  { key: "joinf_business", label: "商业数据" },
+  { key: "joinf_customs", label: "海关数据" },
 ];
 
 const defaultSources = ["joinf_business", "joinf_customs"];
@@ -41,7 +40,7 @@ type SourceAuthStatusStore = Record<string, { verified: boolean; verified_at?: s
 const fallbackSourceProviders: SourceAuthProvider[] = [
   {
     source_name: "joinf",
-    display_name: "Joinf",
+    display_name: "外贸数据",
     task_sources: ["joinf_business", "joinf_customs"],
     credential_fields: [
       { name: "username", label: "账号", input_type: "text", required: true },
@@ -81,8 +80,8 @@ function socialMediaLabel(type: number): string {
 }
 
 function sourceDisplayName(sourceName: string): string {
-  const map: Record<string, string> = { joinf_business: "Joinf 商业", joinf_customs: "Joinf 海关" };
-  return map[sourceName] || sourceName;
+  const map: Record<string, string> = { joinf_business: "商业数据", joinf_customs: "海关数据", joinf: "外贸数据" };
+  return map[sourceName] || map[sourceName.split("_")[0]] || "数据源";
 }
 
 export function SearchWorkbench() {
@@ -164,7 +163,7 @@ export function SearchWorkbench() {
     if (storedAiConfig && storedAiConfig.api_key) setAiConfig(storedAiConfig);
   }, []);
 
-  // Poll for settings changes (when user updates in /settings page)
+  // Poll for settings changes
   useEffect(() => {
     const timer = setInterval(() => {
       setSourceAuthStatus(parseStorage(localStorage.getItem(sourceAuthStatusStorageKey), {}));
@@ -253,7 +252,7 @@ export function SearchWorkbench() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!query.trim()) { setError("请输入产品关键词"); return; }
-    if (verifiedSources.length === 0) { setError("请先在「设置」页面验证数据源登录"); return; }
+    if (verifiedSources.length === 0) { setError("数据源未验证，请稍后重试"); return; }
     setLoading(true); setError(null); setResults(null);
     try {
       const payload: SearchRequest = {
@@ -283,110 +282,8 @@ export function SearchWorkbench() {
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-      {/* Setup Guide - show when not configured */}
-      {(() => {
-        const anySourceVerified = verifiedSources.length > 0;
-        const needsSourceSetup = !anySourceVerified;
-        const needsAiSetup = !aiConfig.api_key;
-
-        if (needsSourceSetup || needsAiSetup) {
-          return (
-            <div className="mt-16">
-              <div className="mx-auto max-w-lg text-center mb-8">
-                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50">
-                  <Search className="h-6 w-6 text-blue-500" />
-                </div>
-                <h2 className="mt-4 text-lg font-semibold text-slate-900">开始使用 Huoke</h2>
-                <p className="mt-1 text-sm text-slate-500">完成以下配置后即可搜索外贸客户线索</p>
-              </div>
-              <div className="mx-auto max-w-md space-y-4">
-                {/* Source Setup */}
-                <div className={`card p-5 ${needsSourceSetup ? "ring-2 ring-amber-400/60" : ""}`}>
-                  <div className="flex items-start gap-3">
-                    <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
-                      anySourceVerified ? "bg-emerald-50" : "bg-amber-50"
-                    }`}>
-                      {anySourceVerified ? (
-                        <CircleCheck className="h-5 w-5 text-emerald-600" />
-                      ) : (
-                        <Key className="h-5 w-5 text-amber-600" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <h3 className="text-sm font-semibold text-slate-900">数据源账号</h3>
-                        {anySourceVerified ? (
-                          <span className="text-[11px] font-medium text-emerald-600">已完成</span>
-                        ) : (
-                          <span className="text-[11px] font-medium text-amber-600">必填</span>
-                        )}
-                      </div>
-                      <p className="mt-1 text-xs text-slate-500">
-                        {anySourceVerified
-                          ? "数据源已验证，可以正常搜索"
-                          : "登录数据源账号后才能抓取商业和海关数据"}
-                      </p>
-                      {!anySourceVerified && (
-                        <a href="/settings" className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800 transition-colors">
-                          前往配置 <ArrowRight className="h-3 w-3" />
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* AI Setup */}
-                <div className={`card p-5 ${!needsSourceSetup && needsAiSetup ? "ring-2 ring-amber-400/60" : ""}`}>
-                  <div className="flex items-start gap-3">
-                    <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
-                      aiConfig.api_key ? "bg-emerald-50" : "bg-slate-100"
-                    }`}>
-                      {aiConfig.api_key ? (
-                        <CircleCheck className="h-5 w-5 text-emerald-600" />
-                      ) : (
-                        <Sparkles className="h-5 w-5 text-slate-400" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <h3 className="text-sm font-semibold text-slate-900">AI 配置</h3>
-                        {aiConfig.api_key ? (
-                          <span className="text-[11px] font-medium text-emerald-600">已完成</span>
-                        ) : (
-                          <span className="text-[11px] font-medium text-slate-400">可选</span>
-                        )}
-                      </div>
-                      <p className="mt-1 text-xs text-slate-500">
-                        {aiConfig.api_key
-                          ? "AI 已配置，支持客户评估和智能总结"
-                          : "配置后可启用客户匹配评分、智能总结等功能"}
-                      </p>
-                      {!aiConfig.api_key && (
-                        <a href="/settings" className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800 transition-colors">
-                          前往配置 <ArrowRight className="h-3 w-3" />
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
-        }
-
-        return null;
-      })()}
-
-      {/* Main content - only show when configured */}
-      {(() => {
-        const anySourceVerified = verifiedSources.length > 0;
-        const needsAiSetup = !aiConfig.api_key;
-        const configured = anySourceVerified && !needsAiSetup;
-        if (!configured) return null;
-        return (
-          <>
-        {/* Search Form */}
-        <form onSubmit={handleSubmit} className="card p-5">
+      {/* Search Form */}
+      <form onSubmit={handleSubmit} className="card p-5">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
             {/* Keyword */}
             <div className="flex-1 min-w-0">
@@ -440,7 +337,7 @@ export function SearchWorkbench() {
                             : "border-slate-200 bg-white text-slate-400 hover:bg-slate-50"
                         }`}>
                         {opt.key === "joinf_business" ? <Building2 className="h-3.5 w-3.5" /> : <Anchor className="h-3.5 w-3.5" />}
-                        <span className="hidden sm:inline">{opt.label.replace("Joinf ", "")}</span>
+                        <span className="hidden sm:inline">{opt.label}</span>
                         {!isVerified && isSelected && <AlertTriangle className="h-3 w-3 text-amber-500" />}
                       </button>
                     );
@@ -615,10 +512,6 @@ export function SearchWorkbench() {
             </p>
           </div>
         )}
-          </>
-        );
-      })()}
-
       {/* Contact Modal */}
       {contactModalItem && <ContactModal item={contactModalItem} onClose={() => setContactModalItem(null)} />}
     </div>

@@ -24,12 +24,12 @@ class SourceAuthProvider:
 
 
 async def _verify_joinf(credentials: Dict[str, str]) -> Path:
-    """Joinf 验证登录 — 优先用纯 HTTP CAS SSO 登录，无需浏览器/noVNC。
+    """Joinf 验证登录 — 优先用纯 HTTP CAS SSO 登录，失败后弹出浏览器让用户手动完成。
 
     流程：
     1. 尝试 HTTP CAS SSO 直接登录（用 api_client 的 _try_http_login）
     2. 登录成功后调 API 获取 loginUserId
-    3. 如果失败（验证码等），提示用户使用 Cookie 导入
+    3. 如果失败（验证码等），弹出有头浏览器让用户手动登录，等待完成后保存会话
     """
     from app.scrapers.joinf.api_client import JoinfApiClient
 
@@ -106,14 +106,53 @@ async def _verify_joinf(credentials: Dict[str, str]) -> Path:
             print(f"[SourceAuth] 已有有效缓存: loginUserId={auth_cache['login_user_id']}")
             return config.storage_state_path
 
-    # 策略3：所有自动方式都失败，提示用户导入 Cookie
-    raise RuntimeError(
-        "自动登录失败（可能需要验证码），请使用 Cookie 导入方式：\n"
-        "1. 在浏览器中登录 trade.joinf.com\n"
-        "2. 按 F12 打开开发者工具 → Network → 刷新页面\n"
-        "3. 找到任意请求，复制 Cookie 值\n"
-        "4. 粘贴到下方的「Cookie 导入」区域"
-    )
+    # 策略3：弹出浏览器让用户手动登录（有头模式）
+    print("[SourceAuth] 自动登录失败，弹出浏览器请手动完成登录...")
+    try:
+        from app.scrapers.joinf.browser import JoinfBrowserSession
+
+        # 验证登录时强制有头模式，让用户能看到浏览器
+        verify_config = JoinfScraperConfig(
+            username=username or None,
+            password=password or None,
+            login_user_id=user_id_int,
+            headless=False,
+        )
+        verify_config.ensure_dirs()
+
+        async with JoinfBrowserSession(verify_config) as session:
+            await session.page.goto("https://cloud.joinf.com", wait_until="domcontentloaded")
+
+            # 如果有账号密码，尝试自动填入
+            if username and password:
+                try:
+                    await session.page.fill('input[name="username"], input[type="text"]', username, timeout=3000)
+                    await session.page.fill('input[name="password"], input[type="password"]', password, timeout=3000)
+                    submit_btn = session.page.locator('button[type="submit"], input[type="submit"]')
+                    if await submit_btn.count() > 0:
+                        await submit_btn.first.click()
+                except Exception:
+                    pass  # 自动填入失败没关系，用户可以手动操作
+
+            # 等待用户手动完成登录（最多 4 分钟）
+            print("[SourceAuth] 等待用户在浏览器中完成登录（最多 4 分钟）...")
+            try:
+                await session.page.wait_for_url(
+                    "**/trade.joinf.com/**",
+                    timeout=240_000,
+                )
+            except Exception:
+                # 也可能跳转到其他已登录页面
+                current_url = session.page.url
+                if "joinf.com" not in current_url or "login" in current_url:
+                    raise RuntimeError("浏览器登录超时或未成功，请重试")
+
+            # 登录成功，保存 storage state（在 __aexit__ 中自动保存）
+            print("[SourceAuth] 浏览器登录成功，已保存登录状态")
+            return verify_config.storage_state_path
+
+    except Exception as e:
+        raise RuntimeError(f"Joinf 浏览器登录失败：{e}。请重新点击「验证登录」，在弹出的浏览器中手动输入账号密码完成登录")
 
 
 async def _verify_linkedin(credentials: Dict[str, str]) -> Path:
@@ -132,7 +171,7 @@ async def _verify_linkedin(credentials: Dict[str, str]) -> Path:
 SOURCE_AUTH_PROVIDERS: Dict[str, SourceAuthProvider] = {
     "joinf": SourceAuthProvider(
         source_name="joinf",
-        display_name="Joinf",
+        display_name="外贸数据",
         task_sources=["joinf_business", "joinf_customs"],
         credential_fields=[
             SourceCredentialField(name="username", label="账号", input_type="text", required=True),

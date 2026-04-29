@@ -53,6 +53,7 @@
 
 ```bash
 make dev
+lsof -ti :8000 -ti :4000 | xargs kill -9 2>/dev/null; make dev
 ```
 
 说明：

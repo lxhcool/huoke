@@ -3,6 +3,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Optional
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -18,6 +19,13 @@ class Settings(BaseSettings):
     joinf_login_user_id: Optional[int] = None
     linkedin_username: Optional[str] = None
     linkedin_password: Optional[str] = None
+
+    @field_validator("joinf_login_user_id", mode="before")
+    @classmethod
+    def empty_str_to_none(cls, v):
+        if isinstance(v, str) and v.strip() == "":
+            return None
+        return v
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

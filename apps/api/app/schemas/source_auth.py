@@ -1,7 +1,5 @@
-from __future__ import annotations
-
 from datetime import datetime
-from typing import Dict, List, Literal
+from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -52,5 +50,5 @@ class SourceAuthVerifyTaskStatus(BaseModel):
     source_name: str
     status: Literal["pending", "running", "verified", "failed"]
     message: str = ""
-    verified_at: datetime | None = None
+    verified_at: Optional[datetime] = None
 

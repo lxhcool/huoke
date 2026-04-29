@@ -110,10 +110,9 @@ def create_app() -> FastAPI:
         Base.metadata.create_all(bind=engine)
 
         # ★ SQLite 不支持 ALTER ADD COLUMN 的自动迁移，手动补列
-        with engine.connect() as conn:
+        with engine.begin() as conn:
             try:
                 conn.execute(text("ALTER TABLE search_job ADD COLUMN min_score INTEGER DEFAULT 0"))
-                conn.commit()
             except Exception:
                 pass  # 列已存在，忽略
 

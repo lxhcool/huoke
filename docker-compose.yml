@@ -34,7 +34,7 @@ services:
       DATABASE_URL: postgresql+psycopg://huoke:${POSTGRES_PASSWORD:-huoke123}@postgres:5432/huoke
       REDIS_URL: redis://redis:6379/0
       APP_ENV: production
-      ALLOWED_ORIGINS: '["https://huoke.lxhcoool.cn","http://huoke.lxhcoool.cn"]'
+      ALLOWED_ORIGINS: '["https://huoke.lxhcoool.cn","http://huoke.lxhcoool.cn","http://localhost:4000"]'
     ports:
       - "8000:8000"
     volumes:

@@ -560,13 +560,16 @@ async def _run_joinf_api_scrape_streaming(
     job_id: int, keyword: str, country: str | None, ai_config: dict | None = None,
     limit: int = 100, min_score: int = 0,
 ) -> Path:
-    """流式处理 Joinf 搜索 — 每条结果即时写入 DB"""
+    """流式处理 Joinf 搜索 — 每条结果即时写入 DB
+    
+    优先使用纯接口（JoinfApiClient），失败后回退到浏览器代理（JoinfBrowserProxy）。
+    """
     from app.scrapers.joinf.config import JoinfScraperConfig
     from app.scrapers.joinf.extractors import extract_business_record
+    from app.scrapers.joinf.api_client import JoinfApiClient
     from app.services.ai_extractor import AIExtractor
 
     config = JoinfScraperConfig()
-    proxy = JoinfBrowserProxy(config, ai_config=ai_config)
 
     # ★ 初始化 AIExtractor 用于商业数据总结
     ai_extractor_biz: Optional[AIExtractor] = None
@@ -585,7 +588,15 @@ async def _run_joinf_api_scrape_streaming(
     max_pages = max(1, (limit + page_size - 1) // page_size)  # 向上取整
     max_pages = min(max_pages, 50)  # 最多50页，防止无限翻页
 
-    print(f"[JoinfApi] 开始流式浏览器代理搜索: keyword={keyword}, country={country}, job_id={job_id}, min_score={min_score}")
+    # ★ 策略1：优先使用纯接口搜索（无需浏览器）
+    use_api_client = True
+    try:
+        api_client = JoinfApiClient(config, ai_config=ai_config)
+        user_id = await api_client._ensure_auth()
+        print(f"[JoinfApi] 纯接口认证成功: loginUserId={user_id}，使用接口模式搜索")
+    except Exception as e:
+        print(f"[JoinfApi] 纯接口认证失败: {e}，回退到浏览器代理模式")
+        use_api_client = False
 
     written_count = 0
 
@@ -778,13 +789,32 @@ async def _run_joinf_api_scrape_streaming(
             written_count += 1
             print(f"[JoinfApi] 流式写入第 {written_count} 条: {company_name} (score={score})")
 
-    output_path = await proxy.search_business(
-        keyword=keyword, country=country, max_pages=max_pages, page_size=page_size,
-        job_id=job_id, on_item_ready=_on_item_ready, min_score=min_score,
-    )
+    if use_api_client:
+        # ★ 纯接口模式：直接用 JoinfApiClient 搜索（无需浏览器）
+        from app.scrapers.joinf.service import is_cancelled
+        from app.scrapers.joinf.models import JoinfRawRow
+        print(f"[JoinfApi] 开始纯接口搜索: keyword={keyword}, country={country}, job_id={job_id}, min_score={min_score}")
+        output_path = await api_client.search_business(
+            keyword=keyword, country=country, max_pages=max_pages, page_size=page_size,
+            job_id=job_id,
+        )
+        # 纯接口模式的结果需要手动触发 _on_item_ready
+        raw_data = json.loads(output_path.read_text(encoding="utf-8"))
+        for item_dict in raw_data.get("items", []):
+            if is_cancelled(job_id):
+                break
+            raw_row = JoinfRawRow(**{k: v for k, v in item_dict.items() if k in JoinfRawRow.__dataclass_fields__})
+            await _on_item_ready(raw_row)
+    else:
+        # ★ 浏览器代理模式：回退方案
+        proxy = JoinfBrowserProxy(config, ai_config=ai_config)
+        print(f"[JoinfApi] 开始浏览器代理搜索: keyword={keyword}, country={country}, job_id={job_id}, min_score={min_score}")
+        output_path = await proxy.search_business(
+            keyword=keyword, country=country, max_pages=max_pages, page_size=page_size,
+            job_id=job_id, on_item_ready=_on_item_ready, min_score=min_score,
+        )
 
     # ★ 如果已被取消，直接返回不报错
-    from app.scrapers.joinf.service import is_cancelled
     if is_cancelled(job_id):
         print(f"[JoinfApi] 流式搜索已取消: {written_count} 条已写入 DB")
         return output_path
@@ -801,78 +831,32 @@ async def _run_joinf_api_scrape_streaming(
 
 async def _run_joinf_scrape(source_type: str, keyword: str, country: str | None, ai_config: dict | None = None, job_id: int = 0) -> Path:
     import logging
+    from app.scrapers.joinf.api_client import JoinfApiClient
     from app.scrapers.joinf.service import is_cancelled, clear_cancel
     logger = logging.getLogger("joinf_scrape")
     print(f"=== [DEBUG] _run_joinf_scrape called: source={source_type}, ai_config={'PRESENT' if ai_config else 'NONE'}, job_id={job_id}")
     config = JoinfScraperConfig()
-    service = JoinfScraperService(config, ai_config=ai_config)
+    api_client = JoinfApiClient(config=config, ai_config=ai_config)
 
-    logger.info(f"Starting Joinf {source_type} scrape: keyword={keyword}, country={country}")
-    logger.info(f"Storage state exists: {config.storage_state_path.exists()} at {config.storage_state_path}")
+    logger.info(f"Starting Joinf {source_type} scrape (pure HTTP): keyword={keyword}, country={country}")
 
-    if not config.storage_state_path.exists():
-        if not config.has_credentials():
-            raise RuntimeError(
-                "Joinf 登录态不存在，请先在前端点击「验证登录」"
-            )
-        await service.ensure_login_session(allow_manual=False)
+    output_path: Path
+    if source_type == "business":
+        output_path = await api_client.search_business(keyword, country, job_id=job_id)
+    else:
+        output_path = await api_client.search_customs(keyword, country, job_id=job_id)
 
-    try:
-        output_path: Path
-        if source_type == "business":
-            output_path = await service.scrape_business_data(keyword, country, job_id=job_id)
-        else:
-            output_path = await service.scrape_customs_data(keyword, country, job_id=job_id)
-
-        # ★ 如果已被取消，不报错直接返回
-        if job_id and is_cancelled(job_id):
-            logger.info(f"Joinf {source_type} scrape 已取消")
-            return output_path
-
-        if _batch_item_count(output_path) <= 0:
-            raise RuntimeError("自动抓取未识别到结果表格")
-
-        logger.info(f"Joinf {source_type} scrape completed: {output_path}")
-        if job_id:
-            clear_cancel(job_id)
+    if job_id and is_cancelled(job_id):
+        logger.info(f"Joinf {source_type} scrape 已取消")
         return output_path
-    except Exception as error:
-        logger.warning(f"Joinf {source_type} auto-scrape failed: {error}")
-        
-        # ★ 浏览器断开/已关闭 → 不再尝试人工模式（浏览器已不可用）
-        browser_dead_markers = [
-            "Target page, context or browser has been closed",
-            "Connection closed",
-            "browser has been closed",
-            "Browser closed",
-        ]
-        if any(marker in str(error) for marker in browser_dead_markers):
-            logger.warning(f"浏览器已断开，不再尝试人工模式: {error}")
-            raise
-        
-        fallback_error_markers = [
-            "未找到可点击元素",
-            "element is not editable",
-            "人工抓取超时",
-            "当前未登录",
-            "自动抓取未识别到结果表格",
-            "Timeout",
-            "Navigation",
-        ]
-        if not any(marker in str(error) for marker in fallback_error_markers):
-            raise
 
-        logger.info(f"Attempting manual navigation fallback for {source_type}")
-        output_path = await service.scrape_from_manual_navigation(
-            source_type=source_type,
-            keyword=keyword,
-            country=country,
-            wait_seconds=240,
-        )
-        if _batch_item_count(output_path) <= 0:
-            raise RuntimeError("人工抓取未识别到结果表格，请在有结果的列表页停留后重试")
+    if _batch_item_count(output_path) <= 0:
+        raise RuntimeError("搜索未获取到结果，请检查登录状态和关键词")
 
-        return output_path
+    logger.info(f"Joinf {source_type} scrape completed: {output_path}")
+    if job_id:
+        clear_cancel(job_id)
+    return output_path
 
 
 async def _run_linkedin_scrape(source_type: str, keyword: str, country: str | None, ai_config: dict | None = None) -> Path:
@@ -1067,12 +1051,25 @@ async def _run_joinf_customs_api_scrape_streaming(
     job_id: int, keyword: str, country: str | None, ai_config: dict | None = None,
     limit: int = 100,
 ) -> Path:
-    """流式处理 Joinf 海关数据 — 每条结果即时写入 DB"""
+    """流式处理 Joinf 海关数据 — 每条结果即时写入 DB
+    
+    优先使用纯接口（JoinfApiClient），失败后回退到浏览器代理（JoinfBrowserProxy）。
+    """
     from app.scrapers.joinf.config import JoinfScraperConfig
+    from app.scrapers.joinf.api_client import JoinfApiClient
     from app.services.ai_extractor import AIExtractor
 
     config = JoinfScraperConfig()
-    proxy = JoinfBrowserProxy(config, ai_config=ai_config)
+
+    # ★ 策略1：优先使用纯接口搜索（无需浏览器）
+    use_api_client = True
+    try:
+        api_client = JoinfApiClient(config, ai_config=ai_config)
+        user_id = await api_client._ensure_auth()
+        print(f"[JoinfCustomsApi] 纯接口认证成功: loginUserId={user_id}，使用接口模式搜索")
+    except Exception as e:
+        print(f"[JoinfCustomsApi] 纯接口认证失败: {e}，回退到浏览器代理模式")
+        use_api_client = False
 
     # 初始化 AI 提取器（用于润色产品描述 + 生成总结）
     ai_extractor: Optional[AIExtractor] = None
@@ -1259,12 +1256,31 @@ async def _run_joinf_customs_api_scrape_streaming(
             written_count += 1
             print(f"[JoinfCustomsApi] 流式写入第 {written_count} 条: {buyer}")
 
-    output_path = await proxy.search_customs(
-        keyword=keyword, country=country, max_pages=max_pages, page_size=page_size,
-        job_id=job_id, on_item_ready=_on_item_ready,
-    )
+    if use_api_client:
+        # ★ 纯接口模式：直接用 JoinfApiClient 搜索海关数据（无需浏览器）
+        from app.scrapers.joinf.service import is_cancelled
+        from app.scrapers.joinf.models import JoinfRawRow
+        print(f"[JoinfCustomsApi] 开始纯接口海关搜索: keyword={keyword}, country={country}, job_id={job_id}")
+        output_path = await api_client.search_customs(
+            keyword=keyword, country=country, max_pages=max_pages, page_size=page_size,
+            job_id=job_id,
+        )
+        # 纯接口模式的结果需要手动触发 _on_item_ready
+        raw_data = json.loads(output_path.read_text(encoding="utf-8"))
+        for item_dict in raw_data.get("items", []):
+            if is_cancelled(job_id):
+                break
+            raw_row = JoinfRawRow(**{k: v for k, v in item_dict.items() if k in JoinfRawRow.__dataclass_fields__})
+            await _on_item_ready(raw_row)
+    else:
+        # ★ 浏览器代理模式：回退方案
+        proxy = JoinfBrowserProxy(config, ai_config=ai_config)
+        print(f"[JoinfCustomsApi] 开始浏览器代理海关搜索: keyword={keyword}, country={country}, job_id={job_id}")
+        output_path = await proxy.search_customs(
+            keyword=keyword, country=country, max_pages=max_pages, page_size=page_size,
+            job_id=job_id, on_item_ready=_on_item_ready,
+        )
 
-    from app.scrapers.joinf.service import is_cancelled
     if is_cancelled(job_id):
         print(f"[JoinfCustomsApi] 流式搜索已取消: {written_count} 条已写入 DB")
         return output_path

@@ -3,7 +3,8 @@
 import React, { useEffect, useState, useMemo } from "react";
 import {
   Key, Sparkles, CircleCheck, Circle, Loader2,
-  ExternalLink, Shield, Eye, EyeOff, Trash2, Save, Upload,
+  LogIn, Shield, Eye, EyeOff, Trash2, Save, Upload,
+  Lock,
 } from "lucide-react";
 
 import type {
@@ -13,16 +14,20 @@ import type {
   SourceAuthVerifyResponse,
 } from "../lib/types";
 
+// TODO: 替换为实际密码
+const ADMIN_PASSWORD = "huoke2024";
+
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api";
 
 const sourceCredentialStorageKey = "huoke.sourceCredentials.v1";
 const sourceAuthStatusStorageKey = "huoke.sourceAuthStatus.v1";
 const aiConfigStorageKey = "huoke.aiConfig.v1";
+const adminAuthKey = "huoke.adminAuth";
 
 const fallbackSourceProviders: SourceAuthProvider[] = [
   {
     source_name: "joinf",
-    display_name: "Joinf",
+    display_name: "外贸数据",
     task_sources: ["joinf_business", "joinf_customs"],
     credential_fields: [
       { name: "username", label: "账号", input_type: "text", required: true },
@@ -40,6 +45,63 @@ type SourceCredentialStore = Record<string, Record<string, string>>;
 type SourceAuthStatusStore = Record<string, { verified: boolean; verified_at?: string; message?: string }>;
 
 export function SettingsPage() {
+  const [authenticated, setAuthenticated] = useState(false);
+  const [passwordInput, setPasswordInput] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+
+  // Check session auth on mount
+  useEffect(() => {
+    const sessionAuth = sessionStorage.getItem(adminAuthKey);
+    if (sessionAuth === "true") setAuthenticated(true);
+  }, []);
+
+  function handlePasswordSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (passwordInput === ADMIN_PASSWORD) {
+      setAuthenticated(true);
+      sessionStorage.setItem(adminAuthKey, "true");
+      setPasswordError("");
+    } else {
+      setPasswordError("密码错误");
+    }
+  }
+
+  if (!authenticated) {
+    return (
+      <div className="mx-auto max-w-sm px-4 py-20">
+        <div className="card p-8">
+          <div className="flex flex-col items-center gap-4">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
+              <Lock className="h-6 w-6 text-slate-400" />
+            </div>
+            <h2 className="text-lg font-semibold text-slate-900">管理员验证</h2>
+            <p className="text-xs text-slate-500">请输入管理密码以访问此页面</p>
+          </div>
+          <form onSubmit={handlePasswordSubmit} className="mt-6 space-y-3">
+            <input
+              type="password"
+              value={passwordInput}
+              onChange={(e) => { setPasswordInput(e.target.value); setPasswordError(""); }}
+              placeholder="输入密码"
+              className="input-field text-sm text-center"
+              autoFocus
+            />
+            {passwordError && (
+              <p className="text-xs text-red-600 text-center">{passwordError}</p>
+            )}
+            <button type="submit" className="btn-primary w-full cursor-pointer">
+              验证
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  return <SettingsContent />;
+}
+
+function SettingsContent() {
   const [sourceProviders, setSourceProviders] = useState<SourceAuthProvider[]>([]);
   const [sourceCredentials, setSourceCredentials] = useState<SourceCredentialStore>({});
   const [sourceAuthStatus, setSourceAuthStatus] = useState<SourceAuthStatusStore>({});
@@ -97,8 +159,8 @@ export function SettingsPage() {
       localStorage.setItem(sourceCredentialStorageKey, JSON.stringify(next));
       return next;
     });
-    const provider = sourceProviders.find((p) => p.source_name === sourceName);
-    showToast("success", `${provider?.display_name ?? sourceName} 凭证已保存`);
+    // 保存后自动验证
+    verifySource(sourceName);
   }
 
   function clearCredentials(sourceName: string) {
@@ -113,7 +175,8 @@ export function SettingsPage() {
       return next;
     });
     const provider = sourceProviders.find((p) => p.source_name === sourceName);
-    showToast("success", `${provider?.display_name ?? sourceName} 凭证已清除`);
+    const friendlyName = provider?.display_name ?? fallbackSourceProviders.find((p) => p.source_name === sourceName)?.display_name ?? "数据源";
+    showToast("success", `${friendlyName} 凭证已清除`);
   }
 
   function saveAiConfig() {
@@ -199,7 +262,7 @@ export function SettingsPage() {
   async function importCookie(sourceName: string) {
     const cookieStr = cookieInput[sourceName]?.trim();
     if (!cookieStr) { showToast("error", "请先粘贴 Cookie 字符串"); return; }
-    const displayName = sourceProviders.find((p) => p.source_name === sourceName)?.display_name ?? sourceName;
+    const displayName = sourceProviders.find((p) => p.source_name === sourceName)?.display_name ?? fallbackSourceProviders.find((p) => p.source_name === sourceName)?.display_name ?? "数据源";
     setCookieImporting((prev) => ({ ...prev, [sourceName]: true }));
     try {
       const res = await fetch(`${apiBaseUrl}/source-auth/${sourceName}/import-cookie`, {
@@ -283,10 +346,12 @@ export function SettingsPage() {
                   >
                     <div className="flex items-center gap-3">
                       <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${
-                        isVerified ? "bg-emerald-50" : "bg-slate-100"
+                        isVerified ? "bg-emerald-50" : isVerifying ? "bg-blue-50" : "bg-slate-100"
                       }`}>
                         {isVerified ? (
                           <Shield className="h-5 w-5 text-emerald-600" />
+                        ) : isVerifying ? (
+                          <Loader2 className="h-5 w-5 text-blue-500 animate-spin" />
                         ) : (
                           <Key className="h-5 w-5 text-slate-400" />
                         )}
@@ -296,11 +361,15 @@ export function SettingsPage() {
                           <span className="text-sm font-semibold text-slate-900">{provider.display_name}</span>
                           {isVerified ? (
                             <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-600/20">
-                              <CircleCheck className="h-3 w-3" /> 已验证
+                              <CircleCheck className="h-3 w-3" /> 已连接
+                            </span>
+                          ) : isVerifying ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-600 ring-1 ring-inset ring-blue-600/20">
+                              <Loader2 className="h-3 w-3 animate-spin" /> 验证中
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500 ring-1 ring-inset ring-slate-600/20">
-                              <Circle className="h-3 w-3" /> 未验证
+                              <Circle className="h-3 w-3" /> 未连接
                             </span>
                           )}
                         </div>
@@ -355,21 +424,22 @@ export function SettingsPage() {
                       <div className="mt-4 flex flex-wrap gap-2">
                         <button
                           onClick={() => saveCredentials(provider.source_name)}
-                          disabled={!hasAnyCreds(provider.source_name)}
-                          className="btn-secondary text-xs !py-2 cursor-pointer"
-                        >
-                          <Save className="h-3.5 w-3.5 mr-1" /> 保存凭证
-                        </button>
-                        <button
-                          onClick={() => verifySource(provider.source_name)}
                           disabled={isVerifying || !hasAnyCreds(provider.source_name)}
                           className="btn-primary text-xs !py-2 cursor-pointer"
                         >
                           {isVerifying ? (
-                            <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> 浏览器登录中，请稍候...</>
+                            <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> 登录验证中...</>
                           ) : (
-                            <><ExternalLink className="h-3.5 w-3.5 mr-1" /> 验证登录</>
+                            <><LogIn className="h-3.5 w-3.5 mr-1" /> 保存并验证</>
                           )}
+                        </button>
+                        <button
+                          onClick={() => verifySource(provider.source_name)}
+                          disabled={isVerifying || !hasAnyCreds(provider.source_name)}
+                          className="btn-secondary text-xs !py-2 cursor-pointer"
+                          title="重新验证登录状态"
+                        >
+                          <Shield className="h-3.5 w-3.5 mr-1" /> 重新验证
                         </button>
                         <button
                           onClick={() => clearCredentials(provider.source_name)}
@@ -383,7 +453,7 @@ export function SettingsPage() {
                       <div className="mt-5 border-t border-slate-200 pt-4">
                         <h4 className="text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">Cookie 导入</h4>
                         <p className="text-[11px] text-slate-500 mb-2">
-                          如果你已有浏览器 Cookie，可直接粘贴导入，无需打开浏览器登录
+                          如果自动登录失败（如需验证码），可直接粘贴 Cookie 导入
                         </p>
                         <textarea
                           value={cookieInput[provider.source_name] ?? ""}
@@ -407,10 +477,22 @@ export function SettingsPage() {
 
                       {/* Status Message */}
                       {status?.message && (
-                        <div className={`mt-4 rounded-lg px-3 py-2 text-xs ${
+                        <div className={`mt-4 rounded-lg px-3 py-2.5 text-xs flex items-center gap-2 ${
                           isVerified ? "bg-emerald-50 text-emerald-700" : isVerifying ? "bg-blue-50 text-blue-700" : "bg-red-50 text-red-700"
                         }`}>
-                          {status.message}
+                          {isVerified ? (
+                            <CircleCheck className="h-4 w-4 shrink-0" />
+                          ) : isVerifying ? (
+                            <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                          ) : (
+                            <Circle className="h-4 w-4 shrink-0" />
+                          )}
+                          <span>{status.message}</span>
+                          {status.verified_at && (
+                            <span className="ml-auto text-[10px] opacity-60">
+                              {new Date(status.verified_at).toLocaleString("zh-CN")}
+                            </span>
+                          )}
                         </div>
                       )}
 
