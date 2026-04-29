@@ -10,6 +10,7 @@ Joinf API 直接调用客户端 — 绕过浏览器，直接调用 Joinf 后端 
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -702,7 +703,27 @@ class JoinfApiClient:
         else:
             logger.warning(f"[JoinfApi] AI 不可用，保留所有 {len(all_api_items)} 条结果（未经过滤）")
 
-        # Step 4: 转换为 JoinfRawRow 格式并保存
+        # Step 4: 获取联系人详情
+        for item in all_api_items:
+            if job_id and is_cancelled(job_id):
+                break
+            bvd_id = item.get("id")
+            if bvd_id and user_id:
+                try:
+                    detail = await asyncio.wait_for(
+                        self._fetch_company_contacts(bvd_id, user_id),
+                        timeout=15.0,
+                    )
+                    if detail.get("contact_list"):
+                        item["_contact_detail"] = detail["contact_list"]
+                    if detail.get("sns_detail"):
+                        item["_sns_detail"] = detail["sns_detail"]
+                except asyncio.TimeoutError:
+                    logger.warning(f"[JoinfApi] 获取联系人超时 ({bvd_id})，跳过")
+                except Exception as e:
+                    logger.warning(f"[JoinfApi] 获取联系人失败 ({bvd_id}): {e}")
+
+        # Step 5: 转换为 JoinfRawRow 格式并保存
         for idx, item in enumerate(all_api_items):
             row = self._api_item_to_raw_row(item, idx)
             batch.items.append(row)
@@ -835,6 +856,7 @@ class JoinfApiClient:
         "countryName": "country",
         "countryNameEn": "country",
         "country": "country",
+        "countryEn": "country_en",
         "countryCode": "country_code",
         "website": "website",
         "websiteUrl": "website",
@@ -843,10 +865,12 @@ class JoinfApiClient:
         "industry": "industry",
         "industryName": "industry",
         "mainIndustry": "industry",
+        "mainBusiness": "main_business",
         "description": "description",
         "companyDesc": "description",
         "companyDescription": "description",
         "intro": "description",
+        "fullOverview": "description",
         "emailCount": "email_count",
         "emailNum": "email_count",
         "emailSize": "email_count",
@@ -864,6 +888,13 @@ class JoinfApiClient:
         "revenue": "revenue",
         "tradeMark": "trademark",
         "socialMedia": "social_media",
+        "snsList": "social_media",
+        "websiteLogo": "website_logo",
+        "grade": "grade",
+        "star": "star",
+        "contactTotal": "contact_total",
+        "hasEmail": "has_email",
+        "hasWebsite": "has_website",
     }
 
     _FIELD_LABELS = {
@@ -872,6 +903,7 @@ class JoinfApiClient:
         "country_code": "国家代码",
         "website": "网站",
         "industry": "行业",
+        "main_business": "主营业务",
         "description": "简介",
         "email_count": "邮箱数量",
         "phone": "电话",
@@ -882,7 +914,59 @@ class JoinfApiClient:
         "revenue": "营收",
         "trademark": "商标",
         "social_media": "社交媒体",
+        "website_logo": "公司Logo",
+        "grade": "信用评级",
+        "star": "星级",
+        "contact_total": "联系人总数",
     }
+
+    async def _fetch_company_contacts(self, bvd_id: str, user_id: int) -> Dict:
+        """获取公司联系人列表 + 社交媒体详情（纯 HTTP，无需浏览器）"""
+        sns_data = None
+        contact_data = None
+
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(15.0),
+            follow_redirects=True,
+            cookies=self._cookies,
+            headers=self._get_headers(),
+            verify=False,
+        ) as client:
+            # 1) selectSnsByBvdId — 社交媒体详情
+            try:
+                sns_resp = await client.post(
+                    "https://data.joinf.com/api/bs/selectSnsByBvdId",
+                    json={"id": bvd_id, "loginUserId": user_id},
+                )
+                if sns_resp.status_code == 200:
+                    sns_result = sns_resp.json()
+                    if isinstance(sns_result, dict) and sns_result.get("code") == 0:
+                        sns_data = sns_result.get("data")
+            except Exception as e:
+                logger.warning(f"[JoinfApi] selectSnsByBvdId 失败 ({bvd_id}): {e}")
+
+            await asyncio.sleep(0.3)
+
+            # 2) selectContactBvdIdList — 联系人列表
+            try:
+                contact_resp = await client.post(
+                    "https://data.joinf.com/api/bs/selectContactBvdIdList",
+                    json={
+                        "pageNum": 1, "pageSize": 100,
+                        "dataFromList": [], "markList": [], "isCollection": 0,
+                        "keyword": None, "role": None, "startTime": None, "endTime": None,
+                        "bvdId": bvd_id, "customerId": None, "jobType": 0,
+                        "loginUserId": user_id,
+                    },
+                )
+                if contact_resp.status_code == 200:
+                    contact_result = contact_resp.json()
+                    if isinstance(contact_result, dict) and contact_result.get("code") == 0:
+                        contact_data = contact_result.get("data")
+            except Exception as e:
+                logger.warning(f"[JoinfApi] selectContactBvdIdList 失败 ({bvd_id}): {e}")
+
+        return {"sns_detail": sns_data, "contact_list": contact_data}
 
     def _api_item_to_raw_row(self, item: Dict, index: int) -> JoinfRawRow:
         """将 API 返回的单条结果转换为 JoinfRawRow"""
@@ -904,8 +988,22 @@ class JoinfApiClient:
             if meta_key in metadata:
                 value = metadata[meta_key]
                 if isinstance(value, list):
-                    value = ", ".join(str(v) for v in value[:5])
-                cells.append(f"{label}: {value}")
+                    if meta_key == "social_media":
+                        parts = []
+                        for s in value[:5]:
+                            if isinstance(s, dict):
+                                url = s.get("snsUrl") or s.get("url") or ""
+                                s_type = s.get("type")
+                                sm_label = {1: "Facebook", 2: "Twitter", 3: "LinkedIn", 4: "YouTube", 5: "Instagram", 7: "Instagram", 8: "YouTube"}.get(s_type, "社交")
+                                if url:
+                                    parts.append(f"{sm_label}: {url}")
+                            else:
+                                parts.append(str(s))
+                        value = ", ".join(parts) if parts else ""
+                    else:
+                        value = ", ".join(str(v) for v in value[:5])
+                if value:
+                    cells.append(f"{label}: {value}")
 
         links = []
         if metadata.get("website"):
@@ -917,6 +1015,14 @@ class JoinfApiClient:
 
         if "_ai_evaluation" in item:
             metadata["ai_evaluation"] = item["_ai_evaluation"]
+
+        # 联系人详情（从 selectContactBvdIdList 获取）
+        if "_contact_detail" in item:
+            metadata["contact_detail"] = item["_contact_detail"]
+
+        # 社交媒体详情（从 selectSnsByBvdId 获取）
+        if "_sns_detail" in item:
+            metadata["sns_detail"] = item["_sns_detail"]
 
         metadata["api_raw"] = {k: v for k, v in item.items() if not k.startswith("_")}
 
