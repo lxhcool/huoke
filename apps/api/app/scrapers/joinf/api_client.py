@@ -773,7 +773,7 @@ class JoinfApiClient:
             # 常见格式: { code: 200, data: { list: [...] } }
             inner = data.get("data", {})
             if isinstance(inner, dict):
-                for key in ("list", "rows", "records", "items", "result", "businessList", "pageInfo"):
+                for key in ("businessListResponses", "customsListResponses", "list", "rows", "records", "items", "result", "businessList", "pageInfo"):
                     if key in inner and isinstance(inner[key], list):
                         return inner[key]
                     # pageInfo 可能是 { list: [...], total: N }
